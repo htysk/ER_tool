@@ -152,10 +152,152 @@ class Connection():
             coords[2:4] = self.get_intersection(entity)
         self.canvas.coords(self.id, coords)
 
-class Application(tk.Tk):
+class RegistWindow(tk.Toplevel):
+    def __init__(self, main_window):
+        super().__init__()
+        
+        # 定数
+        self.window_width = 300
+        self.window_height = 300
+        
+        # 引数をインスタンス変数
+        self.main_window = main_window
+        self.canvas = main_window.canvas
+        
+        # インスタンス変数
+        self.buttons = {}
+        self.column_entry_list = []
+        
+        self.title('テーブル登録')
+        self.geometry(f'{self.window_width}x{self.window_height}')
+        
+        self.buttons['ファイル読み込み'] = tk.Button(self, text='ファイル読み込み', command=self.file_dialog)
+        self.buttons['列追加'] = tk.Button(self, text='列追加', command=self.add_entry)
+        self.buttons['登録'] = tk.Button(self, text='登録', command=self.regist_table)
+        self.buttons['キャンセル'] = tk.Button(self, text='キャンセル', command=self.destroy)
+        self.buttons['ファイル読み込み'].grid(row=1, column=0)
+        self.buttons['列追加'].grid(row=1, column=1)
+        self.buttons['登録'].grid(row=1, column=2)
+        self.buttons['キャンセル'].grid(row=1, column=3)
+        
+        label_table_name = tk.Label(self, text='テーブル名', anchor='center')
+        self.entry_table_name = tk.Entry(self, width=20)
+        label_table_name.grid(row=2, column=0, columnspan=1)
+        self.entry_table_name.grid(row=2, column=2, columnspan=3)
+        
+        for _ in range(0, 5):
+            self.add_entry()
+        
+    def file_dialog(self):
+        filename = tk.filedialog.askopenfilename(parent=self, filetypes=[("", ".csv")], initialdir=os.path.abspath(os.path.dirname(__file__)))
+        if len(filename) != 0:
+            fp = open(filename, 'r', encoding='utf-8')
+            columns = fp.readline().strip().split(',')
+            fp.close()
+            table_name = os.path.splitext(os.path.basename(filename))[0]
+            #insert_table(table_name, columns)
+            #self.draw_table_list()
+            self.entry_table_name.insert(0, table_name)
+            for l, e in self.column_entry_list:
+                l.destroy()
+                e.destroy()
+            del self.column_entry_list[:]
+            
+            while len(self.column_entry_list) < len(columns):
+                self.add_entry()
+            for i in range(0, len(columns)):
+                self.column_entry_list[i][1].insert(0, columns[i])
+        
+        self.lift()
+
+    def add_entry(self):
+        label = tk.Label(self, text=f'列{len(self.column_entry_list)+1}', anchor='center')
+        entry = tk.Entry(self, width=20)
+        label.grid(row=len(self.column_entry_list)+3, column=0, columnspan=1)
+        entry.grid(row=len(self.column_entry_list)+3, column=2, columnspan=3)
+        self.column_entry_list.append([label, entry])
+
+    def regist_table(self):
+        table_name = self.entry_table_name.get()
+        
+        if table_name == '':
+            return
+
+        table_list = get_tables()
+        if (table_name,) in table_list:
+            print('既にテーブルがあります。')
+            return
+
+        columns = []
+        for _, entry in self.column_entry_list:
+            if entry.get() != '':
+                if entry.get() in columns:
+                    print('列名がかぶっています。')
+                    return
+                columns.append(entry.get())
+        if len(columns) <= 0:
+            print('列が入力されていない')
+            return
+        insert_table(table_name, columns)
+        
+        self.main_window.draw_table_list()
+        self.destroy()
+
+class EditWindow(tk.Toplevel):
+    def edit_window(self):
+        slct_index = self.list_views['テーブル一覧'].focus()
+        if slct_index == '':
+            return
+        table_list = get_tables()
+        table_name = table_list[int(slct_index)][0]
+        columns = get_table_columns(table_name)
+
+        sub_win = tk.Toplevel()
+        sub_win.geometry('300x300')
+
+        button_file_dialog = tk.Button(sub_win, text='元に戻す', command=lambda : self.init_data(sub_win, table_name, columns))
+        button_add = tk.Button(sub_win, text='列追加', command=lambda: self.add_entry(sub_win))
+        button_regist = tk.Button(sub_win, text='修正', command=lambda: self.edit_table(sub_win, table_name, self.column_entry_list))
+        button_cancel = tk.Button(sub_win, text='キャンセル', command=lambda : sub_win.destroy())
+        button_file_dialog.grid(row=1, column=0)
+        button_add.grid(row=1, column=1)
+        button_regist.grid(row=1, column=2)
+        button_cancel.grid(row=1, column=3)
+
+        self.init_data(None, sub_win, table_name, columns)
+
+    def init_data(self, sub_win, table_name, columns):
+        label = tk.Label(sub_win, text='テーブル名', anchor='center')
+        entry = tk.Entry(sub_win, width=20)
+        entry.insert(0, table_name)
+        label.grid(row=2, column=0, columnspan=1)
+        entry.grid(row=2, column=2, columnspan=3)
+        self.num = 3
+        self.column_entry_list = [[label, entry]]
+        while self.num-3 < len(columns):
+            self.add_entry(sub_win)
+        for i in range(0, len(columns)):
+            self.column_entry_list[i+1][1].insert(0, columns[i])
+
+    def edit_table(self, sub_win, old_table_name, column_entry_list):
+        new_table_name = column_entry_list[0][1].get()
+        if new_table_name == '':
+            return
+        columns = []
+        for _, e in column_entry_list[1:]:
+            columns.append(e.get())
+        update_table(old_table_name, new_table_name)
+        update_columns(new_table_name, columns)
+        self.draw_table_list()
+        sub_win.destroy()
+
+class MainWindow(tk.Tk):
     def __init__(self):
         self.table_list = {}
         self.connect_list = {}
+        
+        self.buttons = {}
+        self.list_views = {}
 
         super().__init__()
         self.title('ER図')
@@ -165,27 +307,22 @@ class Application(tk.Tk):
         self.canvas.grid(row=0, column=0)
 
         listframe = tk.Frame(self)
-        self.list_view = ttk.Treeview(listframe, show='headings', columns=('t', 'l'), selectmode='browse', height=5)
-        #self.list_view.bind('<<TreeviewSelect>>', self.view_select)
-        self.list_view.heading('t', text='テーブル名', anchor='center')
-        self.list_view.heading('l', text='接続数', anchor='center')
-        self.list_view.column('t', anchor='center')
-        self.list_view.column('l', width=75, anchor='center')
-        self.draw_table_list()
-        self.list_view.grid(row=0,column=0, rowspan=5)
+        self.list_views['テーブル一覧'] = ttk.Treeview(listframe, show='headings', columns=('t', 'l'), selectmode='browse', height=5)
+        #self.list_views['テーブル一覧'].bind('<<TreeviewSelect>>', self.view_select)
+        self.list_views['テーブル一覧'].heading('t', text='テーブル名', anchor='center')
+        self.list_views['テーブル一覧'].heading('l', text='接続数', anchor='center')
+        self.list_views['テーブル一覧'].column('t', anchor='center')
+        self.list_views['テーブル一覧'].column('l', width=75, anchor='center')
+        self.list_views['テーブル一覧'].grid(row=0,column=0, rowspan=5)
 
-        button_new_table = tk.Button(listframe, text='テーブル登録')
-        button_copy_table = tk.Button(listframe, text='テーブルコピー')
-        button_rename_table = tk.Button(listframe, text='テーブル修正')
-        button_delete_table = tk.Button(listframe, text='テーブル削除')
-        button_new_table.bind('<ButtonRelease-1>', self.regist_window)
-        button_copy_table.bind('<ButtonRelease-1>', self.copy_table)
-        button_rename_table.bind('<ButtonRelease-1>', self.edit_window)
-        button_delete_table.bind('<ButtonRelease-1>', self.delete_table)
-        button_new_table.grid(row=1, column=1)
-        button_copy_table.grid(row=2, column=1)
-        button_rename_table.grid(row=3, column=1)
-        button_delete_table.grid(row=4, column=1)
+        self.buttons['テーブル登録'] = tk.Button(listframe, text='テーブル登録', command=self.regist_window)
+        self.buttons['テーブルコピー'] = tk.Button(listframe, text='テーブルコピー', command=self.copy_table)
+        self.buttons['テーブル修正'] = tk.Button(listframe, text='テーブル修正', command=self.edit_window)
+        self.buttons['テーブル削除'] = tk.Button(listframe, text='テーブル削除', command=self.delete_table)
+        self.buttons['テーブル登録'].grid(row=1, column=1)
+        self.buttons['テーブルコピー'].grid(row=2, column=1)
+        self.buttons['テーブル修正'].grid(row=3, column=1)
+        self.buttons['テーブル削除'].grid(row=4, column=1)
         listframe.grid(row=0, column=1, sticky='nsew')
 
         buttonframe = tk.Frame(self)
@@ -205,9 +342,9 @@ class Application(tk.Tk):
         #entity1 = Entity(self.canvas, Point(40, 80), 'ターゲット')
         #entity2 = Entity(self.canvas, Point(800, 300), '店舗マスタ')
         #Connection(self.canvas, entity1, entity2)
+        
+        self.draw_table_list()
     
-    def select_item(self, event):
-        pass
 
     def draw_entity(self):
         tables = get_tables()
@@ -215,7 +352,6 @@ class Application(tk.Tk):
             table = table[0]
             if table not in self.table_list:
                 self.table_list[table] = Entity(self.canvas, Point(random.randint(0, canvas_width), random.randint(0, canvas_height)), table)
-                #self.canvas.tag_bind(self.table_list[table].id['text'], '<ButtonPress>', self.select_item)
 
     def draw_connection(self):
         tables, keys = get_connection()
@@ -224,89 +360,21 @@ class Application(tk.Tk):
                 self.connect_list[f'{st}-{es}'] = Connection(self.canvas, self.table_list[st], self.table_list[es], 'black' if keys[i][2] is None else 'red')
 
     def draw_table_list(self):
-        self.list_view.delete(*self.list_view.get_children())
+        self.list_views['テーブル一覧'].delete(*self.list_views['テーブル一覧'].get_children())
         table_list = get_tables()
         for i in range(len(table_list)):
             con_table, _ = get_connection(table_list[i][0])
-            self.list_view.insert(parent='', index='end', iid=i, values=(table_list[i][0], len(con_table)))
-        self.list_view.grid(row=0, column=0, sticky='nsew')
+            self.list_views['テーブル一覧'].insert(parent='', index='end', iid=i, values=(table_list[i][0], len(con_table)))
+        self.list_views['テーブル一覧'].grid(row=0, column=0, sticky='nsew')
+        
         self.draw_entity()
         self.draw_connection()
-
-    def file_dialog(self, event, sub_win, entry, column_entry_list):
-        filename = tk.filedialog.askopenfilename(filetypes=[("", ".csv")], initialdir=os.path.abspath(os.path.dirname(__file__)))
-        if len(filename) != 0:
-            fp = open(filename, 'r', encoding='utf-8')
-            columns = fp.readline().strip().split(',')
-            fp.close()
-            table_name = os.path.splitext(os.path.basename(filename))[0]
-            #insert_table(table_name, columns)
-            #self.draw_table_list()
-            entry.insert(0, table_name)
-            for l, e in column_entry_list:
-                l.destroy()
-                e.destroy()
-            del column_entry_list[:]
-            self.num = 3
-            while self.num-3 < len(columns):
-                self.add_entry(event, sub_win)
-            for i in range(0, len(columns)):
-                column_entry_list[i][1].insert(0, columns[i])
     
-    def regist_window(self, event):
-        sub_win = tk.Toplevel()
-        sub_win.geometry('300x300')
+    def regist_window(self):
+        RegistWindow(self)
 
-        button_file_dialog = tk.Button(sub_win, text='ファイル読み込み', command=lambda : self.file_dialog(event, sub_win, entry, self.column_entry_list))
-        button_add = tk.Button(sub_win, text='列追加', command=lambda: self.add_entry(event, sub_win))
-        button_regist = tk.Button(sub_win, text='登録', command=lambda: self.regist_table(event, sub_win, entry.get(), self.column_entry_list))
-        button_cancel = tk.Button(sub_win, text='キャンセル', command=lambda : sub_win.destroy())
-        button_file_dialog.grid(row=1, column=0)
-        button_add.grid(row=1, column=1)
-        button_regist.grid(row=1, column=2)
-        button_cancel.grid(row=1, column=3)
-        label = tk.Label(sub_win, text='テーブル名', anchor='center')
-        entry = tk.Entry(sub_win, width=20)
-        label.grid(row=2, column=0, columnspan=1)
-        entry.grid(row=2, column=2, columnspan=3)
-        self.num = 3
-        self.column_entry_list = []
-        for i in range(self.num, self.num+5):
-            self.add_entry(event, sub_win)
-
-    def add_entry(self, event, sub_win):
-        label = tk.Label(sub_win, text=f'列{self.num-2}', anchor='center')
-        entry = tk.Entry(sub_win, width=20)
-        label.grid(row=self.num, column=0, columnspan=1)
-        entry.grid(row=self.num, column=2, columnspan=3)
-        self.column_entry_list.append([label, entry])
-        self.num += 1
-
-    def regist_table(self, event, sub_win, table_name, column_entry_list):
-        if table_name == '':
-            return
-
-        table_list = get_tables()
-        if (table_name,) in table_list:
-            print('既にテーブルがあります。')
-            return
-
-        columns = []
-        for _, entry in column_entry_list:
-            if entry.get() != '':
-                if entry.get() in columns:
-                    print('列名がかぶっています。')
-                    return
-                columns.append(entry.get())
-        if len(columns) <= 0:
-            print('列が入力されていない')
-            return
-        insert_table(table_name, columns)
-        self.draw_table_list()
-        sub_win.destroy()
-
-    def copy_table(self, event):
-        slct_index = self.list_view.focus()
+    def copy_table(self):
+        slct_index = self.list_views['テーブル一覧'].focus()
         if slct_index == '':
             return
         table_list = get_tables()
@@ -321,66 +389,11 @@ class Application(tk.Tk):
         insert_table(table_name, columns)
         self.draw_table_list()
 
-    def init_data(self, event, sub_win, table_name, columns):
-        label = tk.Label(sub_win, text='テーブル名', anchor='center')
-        entry = tk.Entry(sub_win, width=20)
-        entry.insert(0, table_name)
-        label.grid(row=2, column=0, columnspan=1)
-        entry.grid(row=2, column=2, columnspan=3)
-        self.num = 3
-        self.column_entry_list = [[label, entry]]
-        while self.num-3 < len(columns):
-            self.add_entry(event, sub_win)
-        for i in range(0, len(columns)):
-            self.column_entry_list[i+1][1].insert(0, columns[i])
+    def edit_window(self):
+        EditWindow(self)
 
-    def edit_window(self, event):
-        slct_index = self.list_view.focus()
-        if slct_index == '':
-            return
-        table_list = get_tables()
-        table_name = table_list[int(slct_index)][0]
-        columns = get_table_columns(table_name)
-
-        sub_win = tk.Toplevel()
-        sub_win.geometry('300x300')
-
-        button_file_dialog = tk.Button(sub_win, text='元に戻す', command=lambda : self.init_data(event, sub_win, table_name, columns))
-        button_add = tk.Button(sub_win, text='列追加', command=lambda: self.add_entry(event, sub_win))
-        button_regist = tk.Button(sub_win, text='修正', command=lambda: self.edit_table(event, sub_win, table_name, self.column_entry_list))
-        button_cancel = tk.Button(sub_win, text='キャンセル', command=lambda : sub_win.destroy())
-        button_file_dialog.grid(row=1, column=0)
-        button_add.grid(row=1, column=1)
-        button_regist.grid(row=1, column=2)
-        button_cancel.grid(row=1, column=3)
-
-        self.init_data(None, sub_win, table_name, columns)
-        
-        #label = tk.Label(sub_win, text=table_name, anchor='center')
-        #down_label = tk.Label(sub_win, text='↓', anchor='center')
-        #entry = tk.Entry(sub_win, width=20)
-        #button_rename = tk.Button(sub_win, text='リネーム', command=lambda: self.rename_table(event, sub_win, table_name, entry.get()))
-        #button_cancel = tk.Button(sub_win, text='キャンセル', command=lambda : sub_win.destroy())
-        #label.grid(row=0, column=0, columnspan=2, sticky='nsew')
-        #down_label.grid(row=1, column=0, columnspan=2, sticky='nsew')
-        #entry.grid(row=2, column=0, columnspan=2, sticky='nsew')
-        #button_rename.grid(row=3, column=0, sticky='nsew')
-        #button_cancel.grid(row=3, column=1, sticky='nsew')
-
-    def edit_table(self, event, sub_win, old_table_name, column_entry_list):
-        new_table_name = column_entry_list[0][1].get()
-        if new_table_name == '':
-            return
-        columns = []
-        for _, e in column_entry_list[1:]:
-            columns.append(e.get())
-        update_table(old_table_name, new_table_name)
-        update_columns(new_table_name, columns)
-        self.draw_table_list()
-        sub_win.destroy()
-
-    def delete_table(self, event):
-        slct_index = self.list_view.focus()
+    def delete_table(self):
+        slct_index = self.list_views['テーブル一覧'].focus()
         if slct_index == '':
             return
         table_list = get_tables()
@@ -399,7 +412,7 @@ class Application(tk.Tk):
             self.canvas.delete(self.connect_list[k].id)
             del self.connect_list[k]
 
-    def view_select(self, event):
+    def view_select(self):
         pass
 
 def init_table():
@@ -414,7 +427,9 @@ def init_table():
 
         sql = """CREATE TABLE table_columns (
         table_name TEXT NOT NULL,
-        column TEXT NOT NULL
+        column TEXT NOT NULL,
+        type TEXT,
+        unique_flag TEXT
         )"""
         cur.execute(sql)
     
@@ -423,7 +438,9 @@ def init_table():
         end_table TEXT NOT NULL,
         start_column TEXT NOT NULL,
         end_column TEXT NOT NULL,
-        timeER TEXT
+        timeER TEXT,
+        start_cardinality TEXT,
+        end_cardinality TEXT
         )"""
         cur.execute(sql)
 
@@ -563,8 +580,8 @@ def get_connection(start_table=None, end_table=None):
 
 def main():
     init_table()
-    application = Application()
-    application.mainloop()
+    main_window = MainWindow()
+    main_window.mainloop()
 
 if __name__ == '__main__':
     main()
